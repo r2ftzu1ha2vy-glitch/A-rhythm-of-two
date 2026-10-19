@@ -1,0 +1,239 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>A Rhythm of Two</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="dark">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;800&family=Figtree:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-auth-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-database-compat.js"></script>
+<style>
+:root{--ink:#07080f;--panel:#10142b;--line:#2a3262;--ice:#7fe8ff;--fire:#ff6a3d;--tx:#e8ecff;--mut:#8b93c4;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}html,body{height:100%;margin:0;background:var(--ink);color:var(--tx);font:15px/1.4 Figtree,system-ui,sans-serif;overflow:hidden}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+.scr{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;padding:16px;overflow:auto}.scr.on{display:flex}
+.dim{background:rgba(7,8,15,.82)}h1,h2{font-family:Unbounded,sans-serif;margin:0;font-weight:800}h1{font-size:clamp(34px,8vw,84px);letter-spacing:-.02em}
+h1 i{font-style:normal;color:var(--fire)}h1 b{color:var(--ice)}
+button,input,select,textarea{font:inherit;color:var(--tx);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+button{cursor:pointer}button:hover,button:focus-visible{border-color:var(--ice);outline:none}button.p{background:var(--ice);color:#041018;border-color:var(--ice);font-weight:600}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:end}label{display:flex;flex-direction:column;gap:3px;color:var(--mut);font-size:13px;flex:1;min-width:90px}
+.list{display:flex;flex-direction:column;gap:8px;width:min(560px,100%)}.card{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.card small{color:var(--mut)}#editor{align-items:stretch;flex-direction:row;padding:0;gap:0;overflow:hidden}
+.side{width:min(340px,100%);background:rgba(16,20,43,.94);border-right:1px solid var(--line);padding:12px;display:flex;flex-direction:column;gap:8px;overflow:auto;z-index:2}
+#compass{display:grid;grid-template-columns:repeat(6,1fr);gap:4px}#compass button{padding:5px 0;font-size:12px}
+#warns{color:#ffb38f;font-size:13px}#warns.ok{color:#8fe8b5}textarea{min-height:70px;font:11px monospace;width:100%}
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--panel);border:1px solid var(--fire);padding:10px 16px;border-radius:10px;opacity:0;pointer-events:none;transition:.25s;z-index:9;max-width:90vw}#toast.on{opacity:1}
+@media(max-width:700px){#editor{flex-direction:column-reverse}.side{width:100%;max-height:55%;border-right:0;border-top:1px solid var(--line)}}
+</style></head><body>
+<canvas id="cv"></canvas>
+<section class="scr on" id="auth"><h1><i>A Rhythm</i> of <b>Two</b></h1><p style="color:var(--mut);margin:0">Log in or create an account to play and publish levels.</p>
+<div class="list" style="width:min(340px,100%)"><label>Display name (sign up only)<input id="aName" maxlength="24" autocomplete="nickname"></label><label>Email<input id="aMail" type="email" autocomplete="email"></label><label>Password<input id="aPass" type="password" autocomplete="current-password"></label><div id="aerr" style="color:#ff9a8f;min-height:20px"></div><button class="p" id="bLogin">Log in</button><button id="bSign">Sign up</button><button id="bReset">Forgot password</button></div></section>
+<section class="scr" id="title"><h1><i>A Rhythm</i> of <b>Two</b></h1><p style="color:var(--mut);margin:0">Two planets. One path. Land every step on the beat.</p>
+<div class="list" style="width:min(320px,100%)"><button class="p" data-go="select">Play</button><button onclick="openEditor()">Level editor</button><button data-go="settings">Settings</button><button id="bOut">Log out</button></div><p id="who" style="color:var(--mut);margin:0;font-size:13px"></p></section>
+<section class="scr" id="select"><h2>Choose a level</h2><label style="flex:none;flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="prac"> Practice mode (no fail, press R to retry from a checkpoint)</label><div class="list" id="levels"></div><button data-go="title">Back</button></section>
+<section class="scr" id="settings"><h2>Settings</h2><div class="list">
+<div class="card">Hit key<button id="keyBtn"></button></div>
+<div class="card">Volume<input type="range" id="vol" min="0" max="1" step=".05"></div>
+<div class="card">Restart on miss<input type="checkbox" id="fail"></div>
+<div class="card">Timing offset <span id="calv"></span><input type="range" id="cal" min="-250" max="250" step="5"></div>
+<div class="card"><span>Calibrate<br><small>Tap along with the 16 clicks; your offset is set automatically.</small></span><button id="calBtn">Start</button></div></div><button data-go="title">Back</button></section>
+<section class="scr dim" id="pause"><h2>Paused</h2><div class="list" style="width:260px"><button class="p" id="resume">Resume</button><button id="restart">Restart</button><button id="quit">Quit</button></div></section>
+<section class="scr dim" id="result"><h2 id="rt"></h2><div id="rs" style="text-align:center;color:var(--mut)"></div><div class="list" style="width:260px"><button class="p" id="retry">Play again</button><button id="back">Back</button></div></section>
+<section class="scr" id="editor"><div class="side"><h2 style="font-size:20px">Level editor</h2>
+<label>Name<input id="eName"></label><label>Description<input id="eDesc"></label>
+<div class="row"><label>BPM<input id="eBpm" type="number" min="30" max="400"></label><label>Audio offset (ms)<input id="eOff" type="number"></label></div>
+<label>Music file (MP3, WAV, OGG)<input id="eMusic" type="file" accept="audio/*"></label><div class="row"><span id="mName" style="color:var(--mut);font-size:13px;flex:1"></span><button id="bNoMusic">Use built-in rhythm</button></div>
+<div style="color:var(--mut);font-size:13px">Add a tile after the selected one (angle in degrees, 0 = right, 90 = down)</div><div id="compass"></div>
+<div class="row"><label>Angle<input id="tA" type="number"></label><label>Beats (blank = auto)<input id="tB" type="number" step=".25" min="0"></label></div>
+<div class="row"><button id="bDel">Delete tile</button><button id="bL">Move ◀</button><button id="bR">Move ▶</button></div>
+<div class="row"><button id="bUn">Undo</button><button id="bRe">Redo</button><button id="bFit">Fit view</button></div>
+<div id="warns"></div>
+<div class="row"><button class="p" id="bPlay">Playtest</button><button id="bAuto">Preview (autoplay)</button></div>
+<button class="p" id="bPub">Publish online</button>
+<div class="row"><button id="bSave">Save</button><button id="bNew">New</button><button id="bDup">Duplicate</button><button id="bRm">Delete</button></div>
+<select id="saved" size="4"></select><button id="bLoad">Load selected</button>
+<div class="row"><button id="bExp">Export JSON</button><button id="bImp">Import JSON</button></div>
+<textarea id="json" placeholder="Level JSON appears here. Paste JSON and press Import."></textarea><button data-go="title">Back to menu</button></div>
+<canvas id="ec" style="position:relative;flex:1;min-width:0"></canvas></section>
+<div id="toast"></div>
+<script>
+const $=s=>document.querySelector(s),R=d=>d*Math.PI/180,cv=$('#cv'),g=cv.getContext('2d');
+let S={key:'Space',vol:.7,fail:true,cal:0};try{Object.assign(S,JSON.parse(localStorage.getItem('to_s')||'{}'))}catch(e){}
+const saveS=()=>{try{localStorage.setItem('to_s',JSON.stringify(S))}catch(e){toast('Could not save settings (storage unavailable).')}};
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove('on'),3500)}
+function show(id){document.querySelectorAll('.scr').forEach(s=>s.classList.toggle('on',s.id==id));if(id=='select')buildList();if(id=='settings')syncSet();}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-go]');if(b){if(G)stopRun();show(b.dataset.go)}});
+/* ---------- level format & timing ---------- */
+const mk=(name,description,bpm,a)=>({name,description,bpm,offset:0,audio:'synth',tiles:a.map(x=>typeof x=='number'?{a:x}:x)});
+const rep=(a,n)=>Array(n).fill(a);
+const BUILTIN=[];
+const CALIB=mk('Calibration','',100,rep(0,16));CALIB.calib=true;
+function validate(o){if(!o||typeof o!='object')return'File is not a JSON object.';if(typeof o.name!='string'||!o.name.trim())return'Missing "name" (text).';
+ if(typeof o.bpm!='number'||o.bpm<30||o.bpm>400)return'"bpm" must be a number from 30 to 400.';if(o.offset!==undefined&&typeof o.offset!='number')return'"offset" must be a number in milliseconds.';
+ if(!Array.isArray(o.tiles)||!o.tiles.length)return'"tiles" must be a non-empty list.';if(o.tiles.length>2000)return'Too many tiles (max 2000).';
+ for(let i=0;i<o.tiles.length;i++){const t=o.tiles[i];if(!t||typeof t.a!='number'||!isFinite(t.a))return`Tile ${i+1}: "a" (angle in degrees) must be a number.`;if(t.b!=null&&(typeof t.b!='number'||t.b<0))return`Tile ${i+1}: "b" (beats) must be a number ≥ 0 or omitted.`}return null}
+function build(L){const spb=60/L.bpm,pos=[{x:0,y:0}],T=[0],sw=[],ain=[],warn=[],seen=new Map([['0,0',0]]);
+ L.tiles.forEach((t,j)=>{const ai=j?L.tiles[j-1].a+180:t.a-180;let s=(((t.a-ai)%360)+360)%360||360;ain.push(ai);sw.push(s);const b=t.b>0?t.b:s/180;
+  if(b<.25)warn.push(`Step ${j+1} lasts ${b.toFixed(2)} beats (${(b*spb*1000).toFixed(0)} ms). Under 0.25 beats is not humanly playable; raise its beats or widen the turn.`);
+  T.push(T[j]+b*spb);const p=pos[j],q={x:p.x+Math.cos(R(t.a)),y:p.y+Math.sin(R(t.a))};pos.push(q);const k=q.x.toFixed(2)+','+q.y.toFixed(2);
+  if(seen.has(k))warn.push(`Tile ${j+2} overlaps tile ${seen.get(k)+1}. It still plays, but the path will be hard to read.`);else seen.set(k,j+1)});
+ return{pos,T,sw,ain,warn,spb}}
+/* ---------- audio ---------- */
+let ac,master;
+function initAudio(){if(!ac){ac=new(window.AudioContext||window.webkitAudioContext)();master=ac.createGain();master.connect(ac.destination)}master.gain.value=S.vol;if(ac.state=='suspended')ac.resume()}
+function tone(at,f,d,w,v,out){const o=ac.createOscillator(),x=ac.createGain();o.type=w;o.frequency.value=f;x.gain.setValueAtTime(v,at);x.gain.exponentialRampToValueAtTime(.001,at+d);o.connect(x);x.connect(out);o.start(at);o.stop(at+d+.02)}
+/* ---------- game ---------- */
+let G=null,last=0,stars=Array.from({length:140},()=>({x:Math.random(),y:Math.random(),z:Math.random()}));
+const now=()=>ac.currentTime-G.zero;
+function startRun(L,o={}){initAudio();const B=build(L),n=L.tiles.length,c=o.from||0,spb=B.spb,t0=B.T[c]-(c?2:4)*spb;
+ if(G)stopRun();
+ G={L,B,n,o,run:true,auto:!!o.auto,prac:!!o.prac,from:c,next:c+1,kv:c,zero:ac.currentTime+.15-t0,bus:ac.createGain(),ev:[],si:0,cam:{...B.pos[c]},parts:[],trail:[],msg:'',msgT:0,mc:'#fff',meter:[],errs:[],st:{p:0,e:0,l:0,m:0},combo:0,best:0,shake:0,flash:0,pulse:0,grid:-9,fin:false};
+ G.bus.connect(master);const ev=G.ev,sc=[0,2,4,7,9,12,9,7];
+ for(let k=(c?2:4);k>=1;k--)ev.push({t:B.T[c]-k*spb,f:880,d:.08,w:'square',v:.25});
+ for(let k=c;k<=n;k++)ev.push({t:B.T[k],f:1320,d:.07,w:'triangle',v:o.buf?.18:.45});
+ for(let i=0;!o.buf&&i*spb<=B.T[n]+spb;i++){const t=i*spb;if(t<t0)continue;ev.push({t,f:55,d:.22,w:'sine',v:.7});ev.push({t:t+spb/2,f:220*2**(sc[i%8]/12),d:.18,w:'sawtooth',v:.07})}
+ ev.sort((a,b)=>a.t-b.t);if(o.buf){const sr=ac.createBufferSource();sr.buffer=o.buf;sr.connect(G.bus);const mo=L.offset/1000,mp=t0-mo;if(mp>=0)sr.start(Math.max(ac.currentTime,G.zero+t0),mp);else sr.start(G.zero+mo);G.src=sr}show('none');$('#pause').classList.remove('on')}
+function stopRun(){if(!G)return;try{G.src&&G.src.stop()}catch(e){}try{G.bus.disconnect()}catch(e){}G.run=false;G=null}
+function burst(x,y,col,n=14,sp=2.2){for(let i=0;i<n;i++){const a=Math.random()*6.283,s=sp*(.3+Math.random());G.parts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,l:1,col})}}
+function tick(dt){const B=G.B,t=now(),n=G.n,off=G.L.offset/1000;
+ while(G.si<G.ev.length&&G.zero+G.ev[G.si].t+off<ac.currentTime+.25){const e=G.ev[G.si++];tone(Math.max(ac.currentTime,G.zero+e.t+off),e.f,e.d,e.w,e.v,G.bus)}
+ while(G.kv<n&&t>=B.T[G.kv+1]){G.kv++;burst(B.pos[G.kv].x,B.pos[G.kv].y,G.kv%2?'#7fe8ff':'#ff6a3d',10)}
+ const gi=Math.floor(t/B.spb);if(gi!=G.grid){G.grid=gi;G.pulse=1}
+ if(G.auto)while(G.next<=n&&t>=B.T[G.next])judge(0);
+ else while(G.next<=n&&t-S.cal/1000>B.T[G.next]+.14){G.st.m++;G.combo=0;G.next++;say('MISS','#ff4d6d');G.shake=1;G.flash=1;
+  if(!G.prac&&S.fail&&!G.L.calib){failRun();return}}
+ if(!G.fin&&G.next>n&&t>B.T[n]+.9){G.fin=true;finish()}}
+function judge(err){const a=Math.abs(err);let l,c;if(a<=.045){G.st.p++;l='PERFECT';c='#7fe8ff'}else{const e=err<0;e?G.st.e++:G.st.l++;l=(e?'EARLY':'LATE')+(a>.09?'!':'');c=a>.09?'#ffb347':'#ffe08a'}
+ G.combo++;G.best=Math.max(G.best,G.combo);G.errs.push(err);G.meter.push({e:err,t:ac.currentTime});say(l,c);burst(G.B.pos[G.next].x,G.B.pos[G.next].y,c,16,3);G.next++}
+function say(m,c){G.msg=m;G.mc=c;G.msgT=1}
+function press(){if(!G||!G.run||G.auto||G.next>G.n)return;const err=now()-S.cal/1000-G.B.T[G.next];if(Math.abs(err)<=.14)judge(err)}
+function failRun(){G.run=false;try{G.src&&G.src.stop()}catch(e){}try{G.bus.disconnect()}catch(e){};$('#rt').textContent='Missed a beat';$('#rs').textContent=`Reached ${Math.round(100*G.kv/G.n)}% · best combo ${G.best}`;$('#retry').textContent='Retry';show('result');$('#result').classList.add('on')}
+function finish(){G.run=false;const s=G.st,tot=G.n,acc=(s.p+.7*(s.e+s.l))/tot,mean=G.errs.length?G.errs.reduce((a,b)=>a+b,0)/G.errs.length:0;
+ let x=`Perfect ${s.p} · Early ${s.e} · Late ${s.l} · Miss ${s.m}<br>Accuracy ${(acc*100).toFixed(1)}% · best combo ${G.best} · avg error ${(mean*1000).toFixed(0)} ms`;
+ if(G.L.calib&&!G.auto){S.cal=Math.max(-250,Math.min(250,Math.round(S.cal+mean*1000)));saveS();x+=`<br>Timing offset set to ${S.cal} ms.`}
+ $('#rt').textContent=G.auto?'Preview finished':G.L.calib?'Calibrated':'Level complete — '+(acc>.95?'S':acc>.85?'A':acc>.7?'B':'C');$('#rs').innerHTML=x;$('#retry').textContent='Play again';show('result');$('#result').classList.add('on')}
+function pauseRun(){if(!G||!G.run)return;ac.suspend();G.run=false;G.paused=true;$('#pause').classList.add('on')}
+function resumeRun(){if(!G||!G.paused)return;G.paused=false;G.run=true;$('#pause').classList.remove('on');ac.resume()}
+function leave(){const r=G&&G.o.ret;stopRun();$('#pause').classList.remove('on');$('#result').classList.remove('on');if(r=='editor')show('editor');else show('select')}
+$('#resume').onclick=resumeRun;$('#restart').onclick=()=>{const{L,o}=G;ac.resume();startRun(L,{...o,from:0})};$('#quit').onclick=leave;
+$('#retry').onclick=()=>{const{L,o}=G;startRun(L,o)};$('#back').onclick=leave;
+/* ---------- rendering ---------- */
+function fit(c){const d=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;if(c.width!=w*d||c.height!=h*d){c.width=w*d;c.height=h*d}return[w,h,d]}
+function drawPath(x,B,cam,U,W,H,kv,sel){const P=B.pos,s=p=>[W/2+(p.x-cam.x)*U,H/2+(p.y-cam.y)*U],sz=U*.44;x.lineCap='round';
+ for(let j=0;j<P.length;j++){const[a,b]=s(P[j]);if(a<-U||b<-U||a>W+U||b>H+U)continue;if(j<P.length-1){const[c,d]=s(P[j+1]);x.strokeStyle=j<kv?'rgba(127,232,255,.25)':'rgba(90,105,190,.28)';x.lineWidth=U*.07;x.beginPath();x.moveTo(a,b);x.lineTo(c,d);x.stroke()}}
+ for(let j=0;j<P.length;j++){const[a,b]=s(P[j]);if(a<-U||b<-U||a>W+U||b>H+U)continue;const pass=j<=kv,nxt=j==kv+1;x.fillStyle=pass?'#1d3a5e':nxt?'#2b3a86':'#141a3a';x.strokeStyle=pass?'#7fe8ff':nxt?'#ffffff':'#3a4590';x.lineWidth=nxt?3:1.5;
+  if(nxt||j==kv){x.shadowColor=nxt?'#fff':'#7fe8ff';x.shadowBlur=U*.3}x.beginPath();x.roundRect(a-sz/2,b-sz/2,sz,sz,sz*.22);x.fill();x.stroke();x.shadowBlur=0;
+  if(sel!=null&&j==sel+1){x.strokeStyle='#ff6a3d';x.lineWidth=3;x.beginPath();x.arc(a,b,sz*.85,0,6.283);x.stroke()}}}
+function render(dt){const[W,H,d]=fit(cv);g.setTransform(d,0,0,d,0,0);g.fillStyle='#07080f';g.fillRect(0,0,W,H);
+ const cam=G?G.cam:{x:0,y:0};
+ const gr=g.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*.7);gr.addColorStop(0,'rgba(60,70,160,'+(.22+(G?G.pulse*.12:0))+')');gr.addColorStop(1,'rgba(7,8,15,0)');g.fillStyle=gr;g.fillRect(0,0,W,H);
+ for(const s of stars){const px=((s.x*W*1.4-cam.x*s.z*18)%(W*1.4)+W*1.4)%(W*1.4)-W*.2,py=((s.y*H*1.4-cam.y*s.z*18)%(H*1.4)+H*1.4)%(H*1.4)-H*.2;g.fillStyle=`rgba(200,215,255,${.2+s.z*.5})`;g.fillRect(px,py,1+s.z*1.5,1+s.z*1.5)}
+ if(!G||(!G.run&&!G.paused&&!$('#result').classList.contains('on')&&!$('#pause').classList.contains('on'))){if(!G)return}
+ if(G.run)tick(dt);if(!G)return;
+ const{B,n}=G,t=now(),U=Math.min(W,H)/6.2,k=Math.min(G.kv,n),tgt=B.pos[k];G.cam.x+=(tgt.x-G.cam.x)*Math.min(1,dt*5);G.cam.y+=(tgt.y-G.cam.y)*Math.min(1,dt*5);
+ if(G.run){G.pulse=Math.max(0,G.pulse-dt*3);G.msgT=Math.max(0,G.msgT-dt*1.6);G.shake=Math.max(0,G.shake-dt*3);G.flash=Math.max(0,G.flash-dt*2.5)}
+ g.save();if(G.shake>0)g.translate((Math.random()-.5)*14*G.shake,(Math.random()-.5)*14*G.shake);
+ drawPath(g,B,G.cam,U,W,H,G.kv,null);
+ const sp=p=>[W/2+(p.x-G.cam.x)*U,H/2+(p.y-G.cam.y)*U];
+ for(const p of G.parts){if(G.run){p.x+=p.vx*dt;p.y+=p.vy*dt;p.l-=dt*1.8}const[a,b]=sp(p);if(p.l>0){g.globalAlpha=Math.max(0,p.l);g.fillStyle=p.col;g.beginPath();g.arc(a,b,3,0,6.283);g.fill()}}g.globalAlpha=1;G.parts=G.parts.filter(p=>p.l>0);
+ const pv=B.pos[k],[px,py]=sp(pv);let ang;if(k>=n)ang=R(G.L.tiles[n-1].a+180);else{const pr=Math.max(0,Math.min(1,(t-B.T[k])/(B.T[k+1]-B.T[k])));ang=R(B.ain[k]+B.sw[k]*pr)}
+ const ox=px+Math.cos(ang)*U,oy=py+Math.sin(ang)*U,cA=k%2?'#7fe8ff':'#ff6a3d',cB=k%2?'#ff6a3d':'#7fe8ff';
+ if(G.run){G.trail.push([ox,oy,cam.x,cam.y]);if(G.trail.length>14)G.trail.shift()}
+ G.trail.forEach((q,i)=>{g.globalAlpha=i/G.trail.length*.35;g.fillStyle=cB;g.beginPath();g.arc(q[0]+(q[2]-G.cam.x)*U,q[1]+(q[3]-G.cam.y)*U,U*.1*i/14+2,0,6.283);g.fill()});g.globalAlpha=1;
+ g.strokeStyle='rgba(180,195,255,.15)';g.lineWidth=1;g.beginPath();g.arc(px,py,U,0,6.283);g.stroke();
+ for(const[x,y,c]of[[px,py,cA],[ox,oy,cB]]){g.shadowColor=c;g.shadowBlur=U*.4;g.fillStyle=c;g.beginPath();g.arc(x,y,U*.16,0,6.283);g.fill()}g.shadowBlur=0;g.restore();
+ if(G.flash>0){g.fillStyle=`rgba(255,40,80,${G.flash*.25})`;g.fillRect(0,0,W,H)}
+ g.fillStyle='rgba(255,255,255,.12)';g.fillRect(16,14,W-32,5);g.fillStyle='#7fe8ff';g.fillRect(16,14,(W-32)*Math.min(1,G.kv/n),5);
+ g.textAlign='center';g.fillStyle='#e8ecff';g.font='600 14px Figtree';g.fillText(G.L.name+(G.prac?' · practice':'')+(G.auto?' · autoplay':''),W/2,38);
+ if(G.combo>1){g.font='800 22px Unbounded';g.fillText(G.combo,W/2,70)}
+ if(G.msgT>0){g.globalAlpha=G.msgT;g.fillStyle=G.mc;g.font='800 '+(20+G.msgT*8)+'px Unbounded';g.fillText(G.msg,W/2,H*.78);g.globalAlpha=1}
+ if(t<0&&G.run){g.fillStyle='#e8ecff';g.font='800 40px Unbounded';g.fillText(Math.ceil(-t/B.spb)+'',W/2,H*.22)}
+ const my=H-26,mw=Math.min(300,W*.6);g.fillStyle='rgba(255,255,255,.15)';g.fillRect(W/2-mw/2,my,mw,3);g.fillStyle='#7fe8ff';g.fillRect(W/2-1.5,my-8,3,19);
+ for(const m of G.meter){const a=1-(ac.currentTime-m.t)/3;if(a<=0)continue;g.globalAlpha=a;g.fillStyle=Math.abs(m.e)<.045?'#7fe8ff':m.e<0?'#ffe08a':'#ff9a6a';g.fillRect(W/2+m.e/.14*mw/2-1.5,my-6,3,15)}g.globalAlpha=1;
+ g.fillStyle='#8b93c4';g.font='12px Figtree';g.fillText('early',W/2-mw/2-20,my+8);g.fillText('late',W/2+mw/2+16,my+8)}
+function loop(ts){requestAnimationFrame(loop);const dt=Math.min(.05,(ts-last)/1000||.016);last=ts;try{render(dt);if(E&&$('#editor').classList.contains('on'))drawEd()}catch(e){console.error(e)}}
+requestAnimationFrame(loop);
+/* ---------- input ---------- */
+addEventListener('keydown',e=>{if(/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)&&!listen)return;
+ if(listen){e.preventDefault();S.key=e.code;listen=false;saveS();syncSet();return}
+ if(e.repeat)return;if(e.code=='Escape'||e.code=='KeyP'){if(G&&G.run)pauseRun();else if(G&&G.paused)resumeRun();return}
+ if(e.code=='KeyR'&&G&&(G.run||G.paused)){const{L,o}=G;ac.resume();startRun(L,{...o,from:o.prac?Math.floor(Math.max(0,G.kv-3)/8)*8:0});return}
+ if(e.code==S.key){e.preventDefault();press()}});
+cv.addEventListener('pointerdown',e=>{e.preventDefault();press()});
+/* ---------- level list / persistence ---------- */
+let SAVED=[];try{SAVED=JSON.parse(localStorage.getItem('to_levels')||'[]').filter(l=>!validate(l))}catch(e){}
+const saveLevels=()=>{try{localStorage.setItem('to_levels',JSON.stringify(SAVED));return true}catch(e){toast('Saving failed: browser storage is unavailable or full. Use Export JSON to keep your level.');return false}};
+/* ---------- settings ---------- */
+let listen=false;
+function syncSet(){$('#keyBtn').textContent=listen?'Press a key…':S.key;$('#vol').value=S.vol;$('#fail').checked=S.fail;$('#cal').value=S.cal;$('#calv').textContent=S.cal+' ms'}
+$('#keyBtn').onclick=()=>{listen=true;syncSet()};$('#vol').oninput=e=>{S.vol=+e.target.value;if(master)master.gain.value=S.vol;saveS()};
+$('#fail').onchange=e=>{S.fail=e.target.checked;saveS()};$('#cal').oninput=e=>{S.cal=+e.target.value;$('#calv').textContent=S.cal+' ms';saveS()};
+$('#calBtn').onclick=()=>startRun(CALIB,{prac:true});
+/* ---------- editor ---------- */
+let E=null;const ec=$('#ec'),eg=ec.getContext('2d'),blank=()=>({name:'My level',description:'',bpm:120,offset:0,audio:'synth',tiles:[{a:0},{a:0},{a:0},{a:90},{a:90},{a:180},{a:180}]});
+function openEditor(){if(!E)E={L:blank(),sel:0,undo:[],redo:[],id:null,cam:{x:0,y:0,z:1}};show('editor');refreshSaved();syncEd();fitView()}
+function snap(){E.undo.push(JSON.stringify(E.L));if(E.undo.length>200)E.undo.shift();E.redo=[]}
+function fitView(){const B=build(E.L);let a=1e9,b=-1e9,c=1e9,d=-1e9;B.pos.forEach(p=>{a=Math.min(a,p.x);b=Math.max(b,p.x);c=Math.min(c,p.y);d=Math.max(d,p.y)});E.cam.x=(a+b)/2;E.cam.y=(c+d)/2;const w=ec.clientWidth||600,h=ec.clientHeight||400;E.cam.z=Math.min(2.5,Math.max(.1,Math.min(w/((b-a+2)*60),h/((d-c+2)*60))))}
+function syncEd(){const L=E.L;$('#eName').value=L.name;$('#eDesc').value=L.description||'';$('#eBpm').value=L.bpm;$('#eOff').value=L.offset||0;$('#mName').textContent=L.audio=='file'?'Music: '+(L.audioName||'file')+(E.buf?'':' (not loaded, choose it again)'):'Music: built-in rhythm';E.sel=Math.max(0,Math.min(E.sel,L.tiles.length-1));const t=L.tiles[E.sel];$('#tA').value=t.a;$('#tB').value=t.b>0?t.b:'';
+ const B=build(L),w=B.warn;$('#warns').className=w.length?'':'ok';$('#warns').innerHTML=w.length?w.slice(0,6).map(x=>'⚠ '+x).join('<br>')+(w.length>6?`<br>…and ${w.length-6} more`:''):`Timing OK · ${L.tiles.length} tiles · ${B.T[L.tiles.length].toFixed(1)} s`}
+$('#compass').innerHTML=Array.from({length:12},(_,i)=>`<button data-a="${i*30}">${i*30}°</button>`).join('');
+$('#compass').onclick=e=>{const a=e.target.dataset.a;if(a==null)return;snap();E.L.tiles.splice(E.sel+1,0,{a:+a});E.sel++;syncEd()};
+const bind=(id,fn)=>$(id).onchange=e=>{const v=e.target.value;snap();fn(v);syncEd()};
+bind('#eName',v=>E.L.name=v||'Untitled');bind('#eDesc',v=>E.L.description=v);bind('#eBpm',v=>E.L.bpm=Math.max(30,Math.min(400,+v||120)));bind('#eOff',v=>E.L.offset=+v||0);
+bind('#tA',v=>E.L.tiles[E.sel].a=+v||0);bind('#tB',v=>{const t=E.L.tiles[E.sel];if(v===''||+v<=0)delete t.b;else t.b=+v});
+$('#bDel').onclick=()=>{if(E.L.tiles.length<2)return toast('A level needs at least one tile.');snap();E.L.tiles.splice(E.sel,1);syncEd()};
+$('#bL').onclick=()=>{const t=E.L.tiles,i=E.sel;if(i<1)return;snap();[t[i-1],t[i]]=[t[i],t[i-1]];E.sel--;syncEd()};
+$('#bR').onclick=()=>{const t=E.L.tiles,i=E.sel;if(i>=t.length-1)return;snap();[t[i+1],t[i]]=[t[i],t[i+1]];E.sel++;syncEd()};
+$('#bUn').onclick=()=>{if(!E.undo.length)return;E.redo.push(JSON.stringify(E.L));E.L=JSON.parse(E.undo.pop());syncEd()};
+$('#bRe').onclick=()=>{if(!E.redo.length)return;E.undo.push(JSON.stringify(E.L));E.L=JSON.parse(E.redo.pop());syncEd()};
+$('#bFit').onclick=fitView;
+const play=auto=>{const w=build(E.L).warn.filter(x=>x.startsWith('Step'));if(w.length&&!auto)toast('Heads up: '+w[0]);initAudio();startRun(JSON.parse(JSON.stringify(E.L)),{auto,ret:'editor',buf:E.L.audio=='file'?E.buf:null})};
+$('#bPlay').onclick=()=>play(false);$('#bAuto').onclick=()=>play(true);
+function refreshSaved(){$('#saved').innerHTML=SAVED.map((l,i)=>`<option value="${i}"></option>`).join('');[...$('#saved').options].forEach((o,i)=>o.textContent=SAVED[i].name+' ('+SAVED[i].tiles.length+' tiles)');if(E.id)$('#saved').value=SAVED.findIndex(l=>l.id==E.id)}
+$('#bSave').onclick=async()=>{const L=JSON.parse(JSON.stringify(E.L)),i=SAVED.findIndex(l=>l.id==E.id);if(i<0)E.id='L'+Date.now();const rec={...L,id:E.id,pubId:E.pubId||null};if(i<0)SAVED.push(rec);else SAVED[i]=rec;if(saveLevels()){if(E.raw&&L.audio=='file'){try{await aPut(E.id,E.raw)}catch(e){toast('Level saved, but the music could not be stored on this device: '+e.message);refreshSaved();return}}toast('Saved "'+L.name+'". Find it under Play.')}refreshSaved()};
+$('#bNew').onclick=()=>{E={L:blank(),sel:0,undo:[],redo:[],id:null,cam:{x:0,y:0,z:1}};syncEd();fitView();refreshSaved()};
+$('#bLoad').onclick=async()=>{const l=SAVED[+$('#saved').value];if(!l)return toast('Select a saved level first.');E={L:JSON.parse(JSON.stringify(l)),sel:0,undo:[],redo:[],id:l.id,pubId:l.pubId,cam:{x:0,y:0,z:1}};delete E.L.id;delete E.L.pubId;if(l.audio=='file'){try{initAudio();const raw=await aGet(l.id);if(raw){E.raw=raw;E.buf=await ac.decodeAudioData(raw.slice(0))}else toast('The music for this level is not on this device. Choose the file again.')}catch(e){toast('Could not load music: '+e.message)}}syncEd();fitView()};
+$('#bDup').onclick=async()=>{const c=JSON.parse(JSON.stringify(E.L));c.name+=' copy';const id='L'+Date.now();SAVED.push({...c,id,pubId:null});if(saveLevels()){if(E.raw){try{await aPut(id,E.raw)}catch(e){}}const raw=E.raw,buf=E.buf;E={L:c,sel:0,undo:[],redo:[],id,pubId:null,raw,buf,cam:{x:0,y:0,z:1}};syncEd();fitView();toast('Duplicated.')}refreshSaved()};
+$('#bRm').onclick=()=>{const i=SAVED.findIndex(l=>l.id==E.id);if(i<0)return toast('This level has not been saved yet.');if(!confirm('Delete "'+SAVED[i].name+'" permanently?'))return;SAVED.splice(i,1);saveLevels();E.id=null;refreshSaved();toast('Deleted.')};
+$('#bExp').onclick=()=>{const s=JSON.stringify(E.L,null,1);$('#json').value=s;try{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([s],{type:'application/json'}));a.download=E.L.name.replace(/\W+/g,'_')+'.json';a.click()}catch(e){}toast('Exported. The JSON is also in the text box below.')};
+$('#bImp').onclick=()=>{let o;try{o=JSON.parse($('#json').value)}catch(e){return toast('Invalid JSON: '+e.message)}const err=validate(o);if(err)return toast('Cannot import: '+err);snap();E.L={name:o.name,description:o.description||'',bpm:o.bpm,offset:o.offset||0,audio:'synth',tiles:o.tiles.map(t=>t.b>0?{a:t.a,b:t.b}:{a:t.a})};E.id=null;E.pubId=null;E.raw=null;E.buf=null;syncEd();fitView();toast('Imported "'+o.name+'".'+(o.audio=='file'?' Music is not stored in JSON; choose your music file again.':''))};
+let drag=null;ec.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,cx:E.cam.x,cy:E.cam.y,m:0};ec.setPointerCapture(e.pointerId)});
+ec.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.m=Math.max(drag.m,Math.hypot(dx,dy));E.cam.x=drag.cx-dx/(60*E.cam.z);E.cam.y=drag.cy-dy/(60*E.cam.z)});
+ec.addEventListener('pointerup',e=>{if(drag&&drag.m<5){const r=ec.getBoundingClientRect(),U=60*E.cam.z,B=build(E.L);let best=-1,bd=.4;B.pos.forEach((p,j)=>{if(!j)return;const d=Math.hypot(r.width/2+(p.x-E.cam.x)*U-(e.clientX-r.left),r.height/2+(p.y-E.cam.y)*U-(e.clientY-r.top))/U;if(d<bd){bd=d;best=j}});if(best>0){E.sel=best-1;syncEd()}}drag=null});
+ec.addEventListener('wheel',e=>{e.preventDefault();E.cam.z=Math.max(.05,Math.min(5,E.cam.z*(e.deltaY<0?1.12:.89)))},{passive:false});
+function drawEd(){const[W,H,d]=fit(ec);eg.setTransform(d,0,0,d,0,0);eg.fillStyle='#0a0c1a';eg.fillRect(0,0,W,H);const B=build(E.L),U=60*E.cam.z;drawPath(eg,B,E.cam,U,W,H,-1,E.sel);
+ const p=B.pos[0],x=W/2+(p.x-E.cam.x)*U,y=H/2+(p.y-E.cam.y)*U;eg.fillStyle='#ff6a3d';eg.beginPath();eg.arc(x,y,Math.max(4,U*.14),0,6.283);eg.fill();eg.fillStyle='#8b93c4';eg.font='13px Figtree';eg.fillText('Drag to pan · scroll to zoom · click a tile to select it · orange ring = selected',12,H-12)}
+
+/* ---------- music, cloud, auth ---------- */
+const idb=()=>new Promise((res,rej)=>{const r=indexedDB.open('ar2',1);r.onupgradeneeded=()=>r.result.createObjectStore('a');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+const aPut=async(k,v)=>{const d=await idb();return new Promise((res,rej)=>{const t=d.transaction('a','readwrite');t.objectStore('a').put(v,k);t.oncomplete=res;t.onerror=()=>rej(t.error)})};
+const aGet=async k=>{const d=await idb();return new Promise((res,rej)=>{const r=d.transaction('a').objectStore('a').get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})};
+function toB64(buf){const u=new Uint8Array(buf);let s='';for(let i=0;i<u.length;i+=32768)s+=String.fromCharCode.apply(null,u.subarray(i,i+32768));return btoa(s)}
+$('#eMusic').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{initAudio();const raw=await f.arrayBuffer(),buf=await ac.decodeAudioData(raw.slice(0));snap();E.raw=raw;E.buf=buf;E.L.audio='file';E.L.audioName=f.name;syncEd();toast(`Loaded ${f.name} (${buf.duration.toFixed(0)} s). Set the BPM and audio offset to match the song.`)}catch(err){toast('Could not read that audio file. Try an MP3, WAV or OGG.')}e.target.value=''};
+$('#bNoMusic').onclick=()=>{snap();E.L.audio='synth';delete E.L.audioName;E.raw=null;E.buf=null;syncEd()};
+const ADMIN='r2ftzu1ha2vy@gmail.com';let USER=null,auth=null,db=null;
+const isAdmin=()=>!!(USER&&USER.email&&USER.email.toLowerCase()==ADMIN&&USER.emailVerified);
+try{firebase.initializeApp({apiKey:"AIzaSyA6hPCIjZbPp5D0-A8lxGoVlUcvGNSRbaU",authDomain:"a-rhythm-of-two.firebaseapp.com",databaseURL:"https://a-rhythm-of-two-default-rtdb.firebaseio.com",projectId:"a-rhythm-of-two",storageBucket:"a-rhythm-of-two.firebasestorage.app",messagingSenderId:"189234870736",appId:"1:189234870736:web:81a50a4181e06d9ad661d5"});
+ auth=firebase.auth();db=firebase.database();
+ auth.onAuthStateChanged(u=>{USER=u;if(u){$('#who').textContent='Signed in as '+(u.displayName||u.email)+(isAdmin()?' · official publisher':'');if($('#auth').classList.contains('on'))show('title')}else{if(G)stopRun();show('auth')}})}
+catch(e){$('#aerr').textContent='Could not load Firebase. Check your internet connection.'}
+const emsg=e=>({'auth/invalid-email':'That email address is not valid.','auth/missing-password':'Enter a password.','auth/weak-password':'Use a password of at least 6 characters.','auth/email-already-in-use':'An account with this email already exists. Log in instead.','auth/invalid-credential':'Wrong email or password.','auth/user-not-found':'No account with this email. Sign up first.','auth/wrong-password':'Wrong email or password.','auth/too-many-requests':'Too many attempts. Wait a minute and try again.','auth/network-request-failed':'Network error. Check your connection.','auth/operation-not-allowed':'Email/password sign-in is not enabled in the Firebase console.','auth/operation-not-supported-in-this-environment':'Firebase sign-in does not work from file://. Open the page over http://localhost or host it.'}[e.code]||e.message);
+const aTry=async f=>{$('#aerr').textContent='';if(!auth)return;try{await f()}catch(e){$('#aerr').textContent=emsg(e)}};
+$('#bLogin').onclick=()=>aTry(()=>auth.signInWithEmailAndPassword($('#aMail').value.trim(),$('#aPass').value));
+$('#bSign').onclick=()=>aTry(async()=>{const c=await auth.createUserWithEmailAndPassword($('#aMail').value.trim(),$('#aPass').value),n=$('#aName').value.trim();if(n){await c.user.updateProfile({displayName:n});$('#who').textContent='Signed in as '+n}try{await c.user.sendEmailVerification();toast('Account created. A verification email was sent.')}catch(e){toast('Account created, but the verification email failed to send.')}});
+$('#bReset').onclick=()=>aTry(async()=>{const m=$('#aMail').value.trim();if(!m)throw{message:'Enter your email first.'};await auth.sendPasswordResetEmail(m);toast('Password reset email sent.')});
+$('#aPass').addEventListener('keydown',e=>{if(e.key=='Enter')$('#bLogin').click()});
+$('#bOut').onclick=()=>auth&&auth.signOut();
+async function cloudAudio(id){const v=(await db.ref('audio/'+id).once('value')).val();if(!v||!v.data)return null;const b=atob(v.data),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u.buffer}
+async function playLevel(L,o={},kind){initAudio();let buf=null;if(L.audio=='file'){try{const raw=kind=='cloud'?await cloudAudio(L.id):await aGet(L.id);if(raw)buf=await ac.decodeAudioData(raw.slice(0));else toast('The music for this level is missing. Playing with the built-in rhythm.')}catch(e){toast('Could not load the music: '+e.message)}}startRun(L,{...o,buf})}
+function card(L,kind){const c=document.createElement('div'),B=build(L);c.className='card';c.innerHTML='<span><b></b><br><small></small></span><span class="row" style="flex:none"><button class="p">Play</button></span>';c.querySelector('b').textContent=L.name;
+ c.querySelector('small').textContent=`${L.bpm} BPM · ${L.tiles.length} tiles · ${Math.round(B.T[L.tiles.length])} s`+(L.author?' · by '+L.author:'')+(L.audio=='file'?' · custom music':'')+(L.description?' · '+L.description:'');
+ c.querySelector('.p').onclick=()=>playLevel(L,{prac:$('#prac').checked},kind);
+ if(kind=='cloud'&&USER&&(L.uid==USER.uid||isAdmin())){const d=document.createElement('button');d.textContent='Remove';d.onclick=async()=>{if(!confirm('Remove "'+L.name+'" for everyone?'))return;try{await db.ref('audio/'+L.id).remove();await db.ref('levels/'+L.id).remove();toast('Removed.');buildList()}catch(e){toast('Could not remove: '+e.message)}};c.querySelector('.row').prepend(d)}return c}
+async function buildList(){const el=$('#levels');el.innerHTML='<small style="color:var(--mut)">Loading levels…</small>';let cloud=[];
+ try{const v=(await db.ref('levels').once('value')).val()||{};cloud=Object.entries(v).map(([id,l])=>{if(l&&l.tiles&&!Array.isArray(l.tiles))l.tiles=Object.values(l.tiles);return{...l,id}}).filter(l=>!validate(l))}catch(e){toast('Could not load online levels: '+e.message)}
+ el.innerHTML='';const sec=(t,a,k,empty)=>{const h=document.createElement('h3');h.textContent=t;h.style.cssText='margin:10px 0 0;font:800 15px Unbounded';el.appendChild(h);if(!a.length){const p=document.createElement('small');p.style.color='var(--mut)';p.textContent=empty;el.appendChild(p)}a.forEach(l=>el.appendChild(card(l,k)))};
+ sec('Official levels',cloud.filter(l=>l.official===true),'cloud','No official levels yet.');sec('Community levels',cloud.filter(l=>l.official!==true),'cloud','No community levels yet. Publish one from the editor.');sec('Saved on this device',SAVED,'local','Nothing saved yet. Make a level in the editor.')}
+$('#bPub').onclick=async()=>{if(!USER||!db)return toast('Log in first.');const L=JSON.parse(JSON.stringify(E.L)),err=validate(L);if(err)return toast(err);
+ const w=build(L).warn.filter(x=>x.startsWith('Step'));if(w.length&&!confirm('This level has unplayable steps:\n'+w[0]+'\nPublish anyway?'))return;
+ let b64=null;if(L.audio=='file'){if(!E.raw)return toast('Choose your music file again before publishing.');if(E.raw.byteLength>6e6)return toast('Music is too large to publish (limit 6 MB). Use a shorter or lower-bitrate file.');b64=toB64(E.raw)}
+ const official=isAdmin();if(USER.email.toLowerCase()==ADMIN&&!USER.emailVerified)toast('Verify your email to publish official levels. Publishing as a community level instead.');
+ const id=E.pubId||db.ref('levels').push().key;
+ const rec={name:L.name,description:L.description||'',bpm:L.bpm,offset:L.offset||0,audio:L.audio=='file'?'file':'synth',tiles:L.tiles,official,author:USER.displayName||'Player-'+USER.uid.slice(0,4),uid:USER.uid,ts:firebase.database.ServerValue.TIMESTAMP};if(L.audio=='file')rec.audioName=(L.audioName||'music').slice(0,120);
+ try{await db.ref('levels/'+id).set(rec);if(b64)await db.ref('audio/'+id).set({data:b64});E.pubId=id;const i=SAVED.findIndex(l=>l.id==E.id);if(i>=0){SAVED[i].pubId=id;saveLevels()}toast(official?'Published as an official level.':'Published to community levels.')}catch(e){toast('Publish failed: '+e.message)}};
+</script></body></html>
