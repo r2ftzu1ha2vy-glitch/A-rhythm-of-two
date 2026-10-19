@@ -232,7 +232,8 @@ async function buildList(){const el=$('#levels');el.innerHTML='<small style="col
 $('#bPub').onclick=async()=>{if(!USER||!db)return toast('Log in first.');const L=JSON.parse(JSON.stringify(E.L)),err=validate(L);if(err)return toast(err);
  const w=build(L).warn.filter(x=>x.startsWith('Step'));if(w.length&&!confirm('This level has unplayable steps:\n'+w[0]+'\nPublish anyway?'))return;
  let b64=null;if(L.audio=='file'){if(!E.raw)return toast('Choose your music file again before publishing.');if(E.raw.byteLength>6e6)return toast('Music is too large to publish (limit 6 MB). Use a shorter or lower-bitrate file.');b64=toB64(E.raw)}
- const official=isAdmin();if(USER.email.toLowerCase()==ADMIN&&!USER.emailVerified)toast('Verify your email to publish official levels. Publishing as a community level instead.');
+ try{await USER.reload();USER=auth.currentUser;await USER.getIdToken(true)}catch(e){}
+ const official=isAdmin();if(USER.email.toLowerCase()==ADMIN&&!USER.emailVerified){try{await USER.sendEmailVerification()}catch(e){}return toast('Your email is not verified yet, so this cannot be an official level. A verification link was sent to '+USER.email+'. Click it, then press Publish again.')}
  const id=E.pubId||db.ref('levels').push().key;
  const rec={name:L.name,description:L.description||'',bpm:L.bpm,offset:L.offset||0,audio:L.audio=='file'?'file':'synth',tiles:L.tiles,official,author:USER.displayName||'Player-'+USER.uid.slice(0,4),uid:USER.uid,ts:firebase.database.ServerValue.TIMESTAMP};if(L.audio=='file')rec.audioName=(L.audioName||'music').slice(0,120);
  try{await db.ref('levels/'+id).set(rec);if(b64)await db.ref('audio/'+id).set({data:b64});E.pubId=id;const i=SAVED.findIndex(l=>l.id==E.id);if(i>=0){SAVED[i].pubId=id;saveLevels()}toast(official?'Published as an official level.':'Published to community levels.')}catch(e){toast('Publish failed: '+e.message)}};
