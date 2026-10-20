@@ -61,14 +61,14 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-go]');if(b
 /* ---------- level format & timing ---------- */
 const mk=(name,description,bpm,a)=>({name,description,bpm,offset:0,audio:'synth',tiles:a.map(x=>typeof x=='number'?{a:x}:x)});
 const rep=(a,n)=>Array(n).fill(a);
-const BUILTIN=[],PAL=['#ff6a3d','#7fe8ff','#b48cff','#ffd35a'];
+const BUILTIN=[],PAL=['#ff6a3d','#7fe8ff','#b48cff','#ffd35a'],FM={3:[[-60,1]],4:[[-45,Math.SQRT2],[-90,1]]};
 const CALIB=mk('Calibration','',100,rep(0,16));CALIB.calib=true;
 function validate(o){if(!o||typeof o!='object')return'File is not a JSON object.';if(typeof o.name!='string'||!o.name.trim())return'Missing "name" (text).';
  if(typeof o.bpm!='number'||o.bpm<30||o.bpm>400)return'"bpm" must be a number from 30 to 400.';if(o.offset!==undefined&&typeof o.offset!='number')return'"offset" must be a number in milliseconds.';if(o.balls!=null&&![2,3,4].includes(o.balls))return'"balls" must be 2, 3 or 4.';
  if(!Array.isArray(o.tiles)||!o.tiles.length)return'"tiles" must be a non-empty list.';if(o.tiles.length>2000)return'Too many tiles (max 2000).';
  for(let i=0;i<o.tiles.length;i++){const t=o.tiles[i];if(!t||typeof t.a!='number'||!isFinite(t.a))return`Tile ${i+1}: "a" (angle in degrees) must be a number.`;if(t.b!=null&&(typeof t.b!='number'||t.b<0))return`Tile ${i+1}: "b" (beats) must be a number ≥ 0 or omitted.`;if(t.n!=null&&![2,3,4].includes(t.n))return`Tile ${i+1}: "n" (balls) must be 2, 3 or 4 or omitted.`}return null}
 function build(L){let nb=L.balls||2;const NB=[],spb=60/L.bpm,pos=[{x:0,y:0}],T=[0],sw=[],ain=[],warn=[],seen=new Map([['0,0',0]]);
- L.tiles.forEach((t,j)=>{const ai=j?L.tiles[j-1].a+180:t.a-180;let s=(((t.a-ai)%360)+360)%360||360;ain.push(ai);sw.push(s);if(t.n)nb=t.n;NB.push(nb);const b=t.b>0?t.b:s*nb/360;
+ L.tiles.forEach((t,j)=>{if(t.n)nb=t.n;NB.push(nb);const ai=j?L.tiles[j-1].a+360-360/nb:t.a-360/nb;let s=(((t.a-ai)%360)+360)%360||360;ain.push(ai);sw.push(s);const b=t.b>0?t.b:s*nb/360;
   if(b<.25)warn.push(`Step ${j+1} lasts ${b.toFixed(2)} beats (${(b*spb*1000).toFixed(0)} ms). Under 0.25 beats is not humanly playable; raise its beats or widen the turn.`);
   T.push(T[j]+b*spb);const p=pos[j],q={x:p.x+Math.cos(R(t.a)),y:p.y+Math.sin(R(t.a))};pos.push(q);const k=q.x.toFixed(2)+','+q.y.toFixed(2);
   if(seen.has(k))warn.push(`Tile ${j+2} overlaps tile ${seen.get(k)+1}. It still plays, but the path will be hard to read.`);else seen.set(k,j+1)});
@@ -131,12 +131,12 @@ function render(dt){const[W,H,d]=fit(cv);g.setTransform(d,0,0,d,0,0);g.fillStyle
  drawPath(g,B,G.cam,U,W,H,G.kv,null);
  const sp=p=>[W/2+(p.x-G.cam.x)*U,H/2+(p.y-G.cam.y)*U];
  for(const p of G.parts){if(G.run){p.x+=p.vx*dt;p.y+=p.vy*dt;p.l-=dt*1.8}const[a,b]=sp(p);if(p.l>0){g.globalAlpha=Math.max(0,p.l);g.fillStyle=p.col;g.beginPath();g.arc(a,b,3,0,6.283);g.fill()}}g.globalAlpha=1;G.parts=G.parts.filter(p=>p.l>0);
- const pv=B.pos[k],[px,py]=sp(pv);let ang;if(k>=n)ang=R(G.L.tiles[n-1].a+180);else{const pr=Math.max(0,Math.min(1,(t-B.T[k])/(B.T[k+1]-B.T[k])));ang=R(B.ain[k]+B.sw[k]*pr)}
+ const pv=B.pos[k],[px,py]=sp(pv);let ang;if(k>=n)ang=R(G.L.tiles[n-1].a+360-360/B.NB[n-1]);else{const pr=Math.max(0,Math.min(1,(t-B.T[k])/(B.T[k+1]-B.T[k])));ang=R(B.ain[k]+B.sw[k]*pr)}
  const ox=px+Math.cos(ang)*U,oy=py+Math.sin(ang)*U,N=B.NB[Math.min(k,n-1)],cA=PAL[k%N],cB=PAL[(k+1)%N];
  if(G.run){G.trail.push([ox,oy,cam.x,cam.y]);if(G.trail.length>14)G.trail.shift()}
  G.trail.forEach((q,i)=>{g.globalAlpha=i/G.trail.length*.35;g.fillStyle=cB;g.beginPath();g.arc(q[0]+(q[2]-G.cam.x)*U,q[1]+(q[3]-G.cam.y)*U,U*.1*i/14+2,0,6.283);g.fill()});g.globalAlpha=1;
  g.strokeStyle='rgba(180,195,255,.15)';g.lineWidth=1;g.beginPath();g.arc(px,py,U,0,6.283);g.stroke();
- const bl=[[px,py,cA],[ox,oy,cB]];for(let i=1;i<N-1;i++){const q=ang-i*2*Math.PI/N;bl.push([px+Math.cos(q)*U,py+Math.sin(q)*U,PAL[(k+1+i)%N]])}for(const[x,y,c]of bl){g.shadowColor=c;g.shadowBlur=U*.4;g.fillStyle=c;g.beginPath();g.arc(x,y,U*.16,0,6.283);g.fill()}g.shadowBlur=0;g.restore();
+ const bl=[[px,py,cA],[ox,oy,cB]];(FM[N]||[]).forEach(([da,dd],m)=>{const q=ang+R(da);bl.push([px+Math.cos(q)*U*dd,py+Math.sin(q)*U*dd,PAL[(k+2+m)%N]])});if(N>2){g.beginPath();bl.forEach(([x,y],i)=>i?g.lineTo(x,y):g.moveTo(x,y));g.closePath();g.strokeStyle='rgba(180,195,255,.35)';g.lineWidth=U*.04;g.stroke()}for(const[x,y,c]of bl){g.shadowColor=c;g.shadowBlur=U*.4;g.fillStyle=c;g.beginPath();g.arc(x,y,U*.16,0,6.283);g.fill()}g.shadowBlur=0;g.restore();
  if(G.flash>0){g.fillStyle=`rgba(255,40,80,${G.flash*.25})`;g.fillRect(0,0,W,H)}
  g.fillStyle='rgba(255,255,255,.12)';g.fillRect(16,14,W-32,5);g.fillStyle='#7fe8ff';g.fillRect(16,14,(W-32)*Math.min(1,G.kv/n),5);
  g.textAlign='center';g.fillStyle='#e8ecff';g.font='600 14px Figtree';g.fillText(G.L.name+(G.prac?' · practice':'')+(G.auto?' · autoplay':''),W/2,38);
